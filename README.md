@@ -1,4 +1,3 @@
-<img width="948" height="888" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/df1597e7-8b38-474e-b67c-c20b811edce5" />
 # 🏢 5D Institute – AI Knowledge Base
 
 A local Retrieval-Augmented Generation (RAG) system that lets you ask questions about your company's PDF documents. Runs entirely on your machine — no data leaves your environment.
