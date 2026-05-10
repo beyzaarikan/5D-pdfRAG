@@ -1,3 +1,4 @@
+<img width="948" height="888" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/df1597e7-8b38-474e-b67c-c20b811edce5" />
 # 🏢 5D Institute – AI Knowledge Base
 
 A local Retrieval-Augmented Generation (RAG) system that lets you ask questions about your company's PDF documents. Runs entirely on your machine — no data leaves your environment.
@@ -82,8 +83,8 @@ streamlit run app.py
 You can also upload PDFs directly from the sidebar in the app — they will be automatically processed and added to the database.
 
 ---
+<img width="548" height="488" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/2da8a7e1-34b7-4fad-bdee-0d45b945bf86" />
 
-<img width="548" height="488" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/c0ea09fd-69fd-420d-9ffd-c3840d3538cf" />
 
 <br/>
 
