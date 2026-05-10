@@ -1,0 +1,367 @@
+import streamlit as st
+import os
+from langchain_chroma import Chroma
+from src.config import Config
+from langchain_ollama import OllamaEmbeddings, ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("app.log"), # Hataları dosyaya yazar
+        logging.StreamHandler()        # Terminale basar
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+# --- AYARLAR ---
+PERSIST_DIR = Config.PERSIST_DIR
+MODEL = Config.MODEL_NAME
+
+DE_PROMPT = """Sie sind technischer Assistent beim 5D Institute.
+Nutzen Sie die unten stehenden Dokumente, um Benutzerfragen zu beantworten.
+Erfinden Sie keine Informationen. Wenn die Antwort nicht im Kontext steht, sagen Sie es ehrlich.
+
+CONTEXT: {context}
+FRAGE: {question}
+ANTWORT:"""
+
+EN_PROMPT = """You are a technical assistant at 5D Institute.
+Use the documents below to answer user questions.
+Do not invent information. If it's not in the context, say you don't know.
+
+CONTEXT: {context}
+QUESTION: {question}
+ANSWER:"""
+
+@st.cache_resource(show_spinner=False)
+def load_chain(language: str):
+    embeddings = OllamaEmbeddings(model=Config.EMBEDDING_MODEL)
+    vector_db = Chroma(persist_directory=PERSIST_DIR, embedding_function=embeddings)
+    if vector_db._collection.count() == 0:
+        raise ValueError("database is empty! Please run vector_db.py first.")
+    retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+    llm = ChatOllama(model=Config.MODEL_NAME, temperature=0, streaming=True)
+    template = DE_PROMPT if language == "Deutsch" else EN_PROMPT
+    prompt = ChatPromptTemplate.from_template(template)
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    llm_chain = prompt | llm | StrOutputParser()
+    return retriever, llm_chain, format_docs
+
+
+# --- UI ---
+st.set_page_config(page_title="5D AI Assistant", layout="wide", page_icon="🤖")
+
+st.markdown("""<style> .stChatFloatingInputContainer {padding-bottom: 20px;} </style>""", unsafe_allow_html=True)
+
+st.title("🏢 5D Institute – AI Knowledge Base")
+
+# Sidebar
+language = st.sidebar.selectbox("🌐 Sprache / Language", ["Deutsch", "English"])
+
+if st.sidebar.button("🗑️ Clear Chat / Verlauf löschen"):
+    st.session_state.messages = []
+    st.rerun()
+
+if language != st.session_state.get("last_language"):
+    st.session_state.messages = []
+    st.session_state["last_language"] = language
+    load_chain.clear()  # ← BU SATIRI EKLE
+    st.rerun()          
+
+st.sidebar.markdown("---")
+st.sidebar.caption(f"🧠 Engine: {Config.MODEL_NAME} | Local RAG System")
+
+retriever, llm_chain, format_docs = load_chain(language)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Mesaj Geçmişi
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        if msg["role"] == "assistant" and "sources" in msg:
+            expander_title = "📄 Quellen" if language == "Deutsch" else "📄 Sources"
+            with st.expander(expander_title):
+                for s in msg["sources"]:
+                    st.caption(f"📍 {s['source']} — Page {s['page']}")
+
+# Chat Girişi
+if user_input := st.chat_input("Frage stellen..."):
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
+    with st.chat_message("assistant"):
+        answer=""
+        sources = []
+        try:
+            source_docs = retriever.invoke(user_input)
+            context = format_docs(source_docs)
+
+            with st.spinner("Denken..." if language == "Deutsch" else "Thinking..."):
+                answer = st.write_stream(
+                    llm_chain.stream({"context": context, "question": user_input})
+                )
+
+            sources = [
+                {"source": os.path.basename(doc.metadata.get("source", "Unknown")),
+                "page": doc.metadata.get("page", "?")}
+                for doc in source_docs
+            ]
+
+            expander_title = "📄 Quellen" if language == "Deutsch" else "📄 Sources"
+            with st.expander(expander_title):
+                for s in sources:
+                    st.caption(f"📍 {s['source']} — Page {s['page']}")
+        except Exception as e:
+            logger.error(f"Inference error: {e}")
+            answer = "⚠️ Ein Fehler ist aufgetreten." if language == "Deutsch" else "⚠️ An error occurred."
+            st.error(answer)
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": answer,
+        "sources": sources
+    })from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
+from src.config import Config
+
+def simple_search(query):
+    persist_directory = Config.PERSIST_DIR
+    
+    # 1. Aynı embedding modelini tanımla
+    embeddings = OllamaEmbeddings(model=Config.EMBEDDING_MODEL)
+    
+    # 2. Var olan veritabanına bağlan
+    vector_db = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embeddings
+    )
+    if vector_db._collection.count() == 0:
+        print("DB is empty, first run data_loader.py.")
+        return 
+    
+    # 3. Arama yap (En yakın 3 parçayı getir)
+    print(f"\nQuestion: {query}")
+    print("-" * 30)
+    
+    results = vector_db.similarity_search_with_score(query, k=3)
+
+    for i, (doc, score) in enumerate(results):
+        print(f"\nResult {i+1} (Score: {score:.3f}):")
+        print(f"Source: {doc.metadata.get('source')}, Page: {doc.metadata.get('page')}")
+        print(f"Content: {doc.page_content[:200]}...")
+
+
+
+if __name__ == "__main__":
+    # Veritabanına PDF'i yükledikten sonra burayı çalıştır
+    user_query = """Was ist ein von Bosch entwickeltes           dezentrales, 
+nachrichtenbasiertes Bussystem für die Automobilindustrie
+und findet wegen seiner Zuverlässigkeit auch in anderen Industrien
+weitreichende Verwendung""" # PDF'inde olan bir şeyi sor
+    simple_search(user_query)from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings, ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from src.config import Config
+
+def get_rag_chain():
+    persist_directory = Config.PERSIST_DIR
+    
+    # 1. Hafıza (ChromaDB)
+    embeddings = OllamaEmbeddings(model=Config.EMBEDDING_MODEL)
+    vector_db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+    
+    # 2. Beyin (Mistral)
+    llm = ChatOllama(model=Config.MODEL_NAME, temperature=0) # 0 sıcaklık: Uydurmayı azaltır, net cevap verir.
+
+    # 3. Talimat (Prompt)
+    template = """
+    Sie sind technischer Assistent beim 5D Institute.
+
+    Nutzen Sie die unten stehenden Dokumente, um Benutzerfragen zu beantworten.
+
+    Geben Sie ehrliche, professionelle und prägnante Antworten.Antworten Sie in der Sprache der Frage (Deutsch oder Englisch).
+
+    Wenn Sie die Antwort nicht wissen, schreiben Sie: „Leider konnte ich dazu keine Informationen in der Dokumentation finden.“
+    Erfinden Sie keine Informationen, die nicht im CONTEXT stehen.
+    CONTEXT:
+    {context}
+
+    QUESTION:
+    {question}
+
+    ANSWER:
+    """
+    prompt = ChatPromptTemplate.from_template(template)
+    # 4. Zincir (Chain) - LangChain'in en güçlü olduğu yer
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+
+    retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+    # Bu zincir: Soruyu alır -> DB'de arar -> Prompt'a yerleştirir -> LLM'e gönderir
+    rag_chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+    
+    return rag_chain, retriever
+
+if __name__ == "__main__":
+
+    chain, retriever = get_rag_chain()
+    
+    # Test sorusu
+    user_input = "Was ist das von Bosch entwickelte dezentrale, nachrichtenbasierte Bussystem für die Automobilindustrie, das wegen seiner Zuverlässigkeit auch in anderen Industrien weitreichende Verwendung findet?"
+    print("\nAI Thinking...")
+    source_docs = retriever.invoke(user_input)
+    response = chain.invoke(user_input)
+   
+    for doc in source_docs:
+        print(f"Source: {doc.metadata.get('source')}, Page: {doc.metadata.get('page')}")
+    
+    print(f"\nAI Response: \n{response}")from asyncio.log import logger
+import os
+from unittest import loader
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from src.config import Config
+from langdetect import detect
+import logging
+logger = logging.getLogger(__name__) 
+
+
+def load_and_split_pdf(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"PDF bulunamadı: {file_path}")
+
+    loader = PyMuPDFLoader(file_path)
+    docs = loader.load()
+
+    if not docs:
+        raise ValueError(f"PDF okunamadı veya boş: {file_path}")
+    
+    # 2. Parçalama ayarları
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=Config.CHUNK_SIZE,
+        chunk_overlap=Config.CHUNK_OVERLAP ,
+        add_start_index=True,
+        length_function=len
+    )
+    
+    # ÖNCE parçala, SONRA üzerinde gez
+    chunks = text_splitter.split_documents(docs)
+    
+    # 3. Metadata ekleme (Döngü burada olmalı)
+    for chunk in chunks:
+        chunk.metadata["type"] = "pdf"
+        try:
+            chunk.metadata["language"] = detect(chunk.page_content)
+        except Exception as e:
+            logger.warning(f"Dil tespiti başarısız: {e}")
+            chunk.metadata["language"] = "de"
+    
+    print(f"Biten dosya: {file_path} - Toplam {len(chunks)} parça oluşturuldu.")
+    return chunks # Tüm parçaları topluca en son döndür
+
+
+# Test etmek için:
+if __name__ == "__main__":
+    # data/raw klasörüne bir PDF koy ve ismini buraya yaz
+    test_pdf = "data/raw/V8.pdf" 
+    if os.path.exists(test_pdf):
+        result = load_and_split_pdf(test_pdf)
+        # İlk parçanın içeriğini görelim
+        print(f"İlk parça örneği: {result[0].page_content[:100]}...")
+        print(f"Metadata örneği: {result[0].metadata}")import os
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
+from src.ingestion.data_loader import load_and_split_pdf
+from src.config import Config
+import glob
+import hashlib
+
+def make_chunk_id(pdf_path, chunk_index, content):
+    hash_val = hashlib.md5(content.encode()).hexdigest()[:8]
+    return f"{os.path.basename(pdf_path)}_chunk_{chunk_index}_{hash_val}"
+
+def create_vector_db():
+    # 1. Ayarlar
+    raw_pdf_path = Config.RAW_DATA_PATH
+    persist_directory = Config.PERSIST_DIR # Veritabanının kaydedileceği klasör
+    
+    pdf_files = glob.glob(os.path.join(raw_pdf_path, "*.pdf"))
+    if not pdf_files:
+        print(f"Error: '{raw_pdf_path}' could not be found or is empty.")
+        return None
+    
+    print(f"{len(pdf_files)} PDF bulundu: {[os.path.basename(f) for f in pdf_files]}")
+
+
+    # 2. PDF'i yükle ve parçala (Senin yazdığın fonksiyon)
+    all_chunks = []
+    all_ids = []
+
+    for pdf_path in pdf_files:
+        chunks = load_and_split_pdf(pdf_path)
+        ids = [make_chunk_id(pdf_path, i, chunks[i].page_content) for i in range(len(chunks))]
+        all_chunks.extend(chunks)
+        all_ids.extend(ids)
+
+    print(f"\nall chunks count: {len(all_chunks)}")
+
+    # 3. Embedding modelini tanımla (Ollama açık olmalı!)
+    embeddings = OllamaEmbeddings(model=Config.EMBEDDING_MODEL)
+    print("Data is being vectorized and saved to the database... This may take a while.")
+    if os.path.exists(persist_directory) and os.listdir(persist_directory):
+        print("Existing DB found, adding new documents...")
+        vector_db = Chroma(
+            persist_directory=persist_directory,
+            embedding_function=embeddings
+        )
+        vector_db.add_documents(documents=all_chunks, ids=all_ids)
+    else:
+        print("Creating new DB...")
+        vector_db = Chroma.from_documents(
+            documents=all_chunks,
+            embedding=embeddings,
+            persist_directory=persist_directory,
+            ids=all_ids,
+            collection_metadata={"hnsw:space": "cosine"}
+        )
+    
+    print(f"Success! Database saved to '{persist_directory}' directory.")
+    return vector_db
+
+if __name__ == "__main__":
+    create_vector_db()import os
+from dotenv import load_dotenv
+
+load_dotenv() # .env dosyasındaki verileri okur
+
+class Config:
+    PERSIST_DIR = os.getenv("PERSIST_DIRECTORY", "./db")
+    MODEL_NAME = os.getenv("OLLAMA_MODEL", "mistral")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    try:
+        CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 512))
+        CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 64))
+    except ValueError:
+        CHUNK_SIZE = 512
+        CHUNK_OVERLAP = 64
+    RAW_DATA_PATH = os.getenv("RAW_DATA_PATH", "./data/raw")

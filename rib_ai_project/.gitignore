@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Veri ve Veritabanı (KRİTİK)
+data/
+db/
+
+# IDE
+.vscode/
+.idea/
