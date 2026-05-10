@@ -83,7 +83,11 @@ You can also upload PDFs directly from the sidebar in the app — they will be a
 
 ---
 
-<img width="435" height="300" alt="Ekran görüntüsü 2026-05-10 194846" src="https://github.com/user-attachments/assets/8e2bb724-e5d4-4756-81ca-6a0e8f04e2a8" />
+<img width="548" height="488" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/c0ea09fd-69fd-420d-9ffd-c3840d3538cf" />
+
+<br/>
+
+
 <img width="435" height="292" alt="image" src="https://github.com/user-attachments/assets/4dd026d3-0a25-4d0a-9861-3708be157b68" />
 
 
