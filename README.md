@@ -82,7 +82,11 @@ streamlit run app.py
 You can also upload PDFs directly from the sidebar in the app — they will be automatically processed and added to the database.
 
 ---
-<img width="948" height="888" alt="Ekran görüntüsü 2026-05-10 195750" src="https://github.com/user-attachments/assets/90d78b72-cf9a-4d51-a897-4e56c6bab448" />
+
+<img width="435" height="300" alt="Ekran görüntüsü 2026-05-10 194846" src="https://github.com/user-attachments/assets/8e2bb724-e5d4-4756-81ca-6a0e8f04e2a8" />
+<img width="435" height="292" alt="image" src="https://github.com/user-attachments/assets/4dd026d3-0a25-4d0a-9861-3708be157b68" />
+
+
 
 
 
